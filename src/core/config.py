@@ -334,9 +334,7 @@ class Config:
     @property
     def deepseek_url(self) -> str:
         with self._lock:
-            return self.config["AI"].get(
-                "deepseek_url", "https://api.deepseek.com/v1/chat/completions"
-            )
+            return self.config["AI"].get("deepseek_url", "https://api.deepseek.com/v1/")
 
     @property
     def spark_api_key(self) -> str:
@@ -347,7 +345,7 @@ class Config:
     def spark_url(self) -> str:
         with self._lock:
             return self.config["AI"].get(
-                "spark_url", "https://spark-api-open.xf-yun.com/v1/chat/completions"
+                "spark_url", "https://spark-api-open.xf-yun.com/v1/"
             )
 
     @property
@@ -365,7 +363,7 @@ class Config:
         with self._lock:
             return self.config["AI"].get(
                 "model_scope_url",
-                "https://api-inference.modelscope.cn/v1/chat/completions",
+                "https://api-inference.modelscope.cn/v1/",
             )
 
     @property
@@ -384,7 +382,7 @@ class Config:
     def zhipu_url(self) -> str:
         with self._lock:
             return self.config["AI"].get(
-                "zhipu_url", "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+                "zhipu_url", "https://open.bigmodel.cn/api/paas/v4/"
             )
 
     @property
