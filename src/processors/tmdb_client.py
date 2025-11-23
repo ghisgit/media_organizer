@@ -57,7 +57,7 @@ class TMDBClient:
             search = tmdb.Search()
             params = {"query": title, "language": self.language}
             if year:
-                params["year"] = year
+                params["primary_release_year"] = year
 
             response = search.movie(**params)
 
