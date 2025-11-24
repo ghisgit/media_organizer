@@ -732,9 +732,10 @@ class MediaOrganizer:
             )
 
             # 3. 判断是否为动漫
-            is_anime = self.tmdb_client.is_anime(tmdb_data["genres"])
-            tmdb_data["is_anime"] = is_anime
-            self.logger.debug(f"是否为动漫: {is_anime}, 类型: {tmdb_data['genres']}")
+            is_anime = tmdb_data.get("is_anime", False)
+            self.logger.debug(
+                f"TMDB搜索结果: {tmdb_data['title']} ({tmdb_data['release_year']}) - 动漫: {is_anime}"
+            )
 
             # 4. 创建硬链接
             target_path = self.file_linker.organize_file(file_info, tmdb_data, ai_data)

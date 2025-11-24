@@ -1,7 +1,7 @@
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 # 添加src目录到Python路径
 src_path = Path(__file__).parent / "src"
@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 
 
 class CommandLineOrganizer:
-    """命令行模式整理器"""
+    """命令行模式整理器 - 修复测试模式和动漫判断"""
 
     def __init__(self, config: Config, test_mode: bool = False):
         self.config = config
@@ -47,7 +47,7 @@ class CommandLineOrganizer:
             )
 
             if self.test_mode:
-                self.logger.info("测试模式已启用")
+                self.logger.info("测试模式已启用 - 将显示处理结果但不实际移动文件")
             else:
                 self.logger.info("正常模式")
 
@@ -118,7 +118,18 @@ class CommandLineOrganizer:
             self.logger.error(f"TMDB未找到: {ai_data['title']}")
             return False
 
-        # 创建链接
+        # 判断是否为动漫（使用分类ID判断）
+        is_anime = tmdb_data.get("is_anime", False)
+        self.logger.info(
+            f"媒体信息: {tmdb_data['title']} ({tmdb_data['release_year']}) - 类型: {tmdb_data['media_type']} - 动漫: {is_anime}"
+        )
+
+        # 测试模式：只显示信息，不实际处理
+        if self.test_mode:
+            self._display_test_info(file_path, tmdb_data, ai_data, is_anime)
+            return True
+
+        # 正常模式：创建链接
         file_info = {"file_path": str(file_path), "file_size": file_size}
         target_path = self.file_linker.organize_file(file_info, tmdb_data, ai_data)
 
@@ -140,6 +151,74 @@ class CommandLineOrganizer:
 
         return True
 
+    def _display_test_info(
+        self, file_path: Path, tmdb_data: Dict, ai_data: Dict, is_anime: bool
+    ):
+        """显示测试模式信息"""
+        self.logger.info("=" * 50)
+        self.logger.info("测试模式 - 文件处理信息:")
+        self.logger.info(f"源文件: {file_path}")
+        self.logger.info(f"AI解析: {ai_data}")
+        self.logger.info(
+            f"TMDB匹配: {tmdb_data['title']} ({tmdb_data['release_year']})"
+        )
+        self.logger.info(f"媒体类型: {tmdb_data['media_type']}")
+        self.logger.info(f"TMDB ID: {tmdb_data['tmdb_id']}")
+        self.logger.info(f"分类: {tmdb_data['genres']}")
+        self.logger.info(f"分类ID: {tmdb_data.get('genre_ids', [])}")
+        self.logger.info(f"是否为动漫: {is_anime} (通过分类ID 16 判断)")
+
+        # 显示目标路径信息
+        if tmdb_data["media_type"] == "movie":
+            base_dir = "动漫/电影" if is_anime else "电影"
+            folder_name = f"{tmdb_data['title']} ({tmdb_data['release_year']})"
+            file_name = (
+                f"{tmdb_data['title']} ({tmdb_data['release_year']}){file_path.suffix}"
+            )
+        else:
+            base_dir = "动漫/电视" if is_anime else "电视"
+            folder_name = f"{tmdb_data['title']} ({tmdb_data['release_year']})"
+            season = ai_data.get("season", 1)
+            season_folder = f"Season {season:02d}"
+            episode = ai_data.get("episode", 1)
+            file_name = (
+                f"{tmdb_data['title']} S{season:02d}E{episode:02d}{file_path.suffix}"
+            )
+
+        target_path = Path(self.config.library_path) / base_dir / folder_name
+        if tmdb_data["media_type"] == "tv":
+            target_path = target_path / season_folder
+        target_path = target_path / file_name
+
+        self.logger.info(f"目标路径: {target_path}")
+        self.logger.info("测试模式完成 - 文件未被移动")
+        self.logger.info("=" * 50)
+
+    def organize_directory(self, directory: Path) -> bool:
+        """整理目录中的所有文件"""
+        try:
+            from src.scanners.file_scanner import FileScanner
+
+            self.logger.info(f"开始扫描目录: {directory}")
+            scanner = FileScanner(self.processed_files_db, self.config)
+
+            success_count = 0
+            total_count = 0
+
+            for file_path, file_size in scanner.scan_directory(
+                directory, check_size=True
+            ):
+                total_count += 1
+                if self.organize_single_file(file_path):
+                    success_count += 1
+
+            self.logger.info(f"目录处理完成: {success_count}/{total_count} 成功")
+            return success_count == total_count
+
+        except Exception as e:
+            self.logger.error(f"处理目录失败 {directory}: {e}")
+            return False
+
 
 def main():
     """命令行模式主函数"""
@@ -154,7 +233,7 @@ def main():
   # 整理目录
   python cli.py --dir /path/to/media
   
-  # 测试模式
+  # 测试模式（显示处理信息但不实际移动文件）
   python cli.py --file /path/to/movie.mp4 --test
   
   # 使用特定配置
@@ -170,7 +249,9 @@ def main():
     # 其他选项
     parser.add_argument("--config", default="config.ini", help="配置文件路径")
     parser.add_argument("--verbose", "-v", action="store_true", help="详细输出")
-    parser.add_argument("--test", action="store_true", help="测试模式")
+    parser.add_argument(
+        "--test", action="store_true", help="测试模式（不实际移动文件）"
+    )
 
     args = parser.parse_args()
 
@@ -185,22 +266,33 @@ def main():
         # 创建整理器
         organizer = CommandLineOrganizer(config, test_mode=args.test)
 
+        success_count = 0
+        total_count = 0
+
         # 处理文件或目录
         if args.file:
-            success_count = 0
+            total_count = len(args.file)
             for file_path_str in args.file:
                 file_path = Path(file_path_str)
                 if organizer.organize_single_file(file_path):
                     success_count += 1
 
-            total_count = len(args.file)
             print(f"处理完成: {success_count}/{total_count} 成功")
 
         elif args.dir:
-            # 这里可以添加目录处理逻辑
-            print(f"目录处理功能待实现: {args.dir}")
+            directory = Path(args.dir)
+            if organizer.organize_directory(directory):
+                success_count = 1
+                total_count = 1
+            else:
+                success_count = 0
+                total_count = 1
 
-        sys.exit(0 if success_count == len(args.file) else 1)
+        if args.test:
+            print(f"测试模式完成 - 共分析 {total_count} 个文件")
+            sys.exit(0)
+        else:
+            sys.exit(0 if success_count == total_count else 1)
 
     except KeyboardInterrupt:
         logger.info("程序被用户中断")

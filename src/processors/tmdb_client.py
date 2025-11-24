@@ -5,7 +5,7 @@ from ..core.database import TMDBCacheDB
 
 
 class TMDBClient:
-    """TMDB客户端 - 使用tmdbsimple库"""
+    """TMDB客户端 - 使用分类ID判断动漫"""
 
     def __init__(self, api_key: str, cache_db: TMDBCacheDB, proxy: str = ""):
         self.api_key = api_key
@@ -103,6 +103,8 @@ class TMDBClient:
             return None
 
         release_year = self._extract_year(details.get("release_date"))
+        genres = [genre["name"] for genre in details.get("genres", [])]
+        genre_ids = [genre["id"] for genre in details.get("genres", [])]
 
         # 构建结果
         result_data = {
@@ -111,7 +113,9 @@ class TMDBClient:
             "media_type": "movie",
             "title": details["title"],
             "release_year": release_year,
-            "genres": [genre["name"] for genre in details.get("genres", [])],
+            "genres": genres,
+            "genre_ids": genre_ids,
+            "is_anime": self.is_anime_by_genre_ids(genre_ids),  # 使用分类ID判断
         }
 
         # 缓存结果
@@ -123,11 +127,13 @@ class TMDBClient:
             "movie",
             details["title"],
             release_year,
-            [genre["name"] for genre in details.get("genres", [])],
+            genres,
             details,
         )
 
-        self.logger.debug(f"电影搜索成功: {title} -> {details['title']}")
+        self.logger.debug(
+            f"电影搜索成功: {title} -> {details['title']}, 动漫: {result_data['is_anime']}"
+        )
         return result_data
 
     def _process_tv_result(self, result: Dict, title: str) -> Optional[Dict[str, Any]]:
@@ -139,6 +145,8 @@ class TMDBClient:
             return None
 
         release_year = self._extract_year(details.get("first_air_date"))
+        genres = [genre["name"] for genre in details.get("genres", [])]
+        genre_ids = [genre["id"] for genre in details.get("genres", [])]
 
         # 构建结果
         result_data = {
@@ -147,7 +155,9 @@ class TMDBClient:
             "media_type": "tv",
             "title": details["name"],
             "release_year": release_year,
-            "genres": [genre["name"] for genre in details.get("genres", [])],
+            "genres": genres,
+            "genre_ids": genre_ids,
+            "is_anime": self.is_anime_by_genre_ids(genre_ids),  # 使用分类ID判断
         }
 
         # 缓存结果
@@ -159,11 +169,13 @@ class TMDBClient:
             "tv",
             details["name"],
             release_year,
-            [genre["name"] for genre in details.get("genres", [])],
+            genres,
             details,
         )
 
-        self.logger.debug(f"电视剧搜索成功: {title} -> {details['name']}")
+        self.logger.debug(
+            f"电视剧搜索成功: {title} -> {details['name']}, 动漫: {result_data['is_anime']}"
+        )
         return result_data
 
     def _extract_year(self, date_str: Optional[str]) -> Optional[int]:
@@ -193,13 +205,12 @@ class TMDBClient:
             self.logger.error(f"获取电视剧详情失败 {tv_id}: {e}")
             return None
 
-    def is_anime(self, genres: List[str]) -> bool:
-        """判断是否为动漫"""
-        anime_keywords = ["动画", "Anime", "动漫", "卡通", "Animation"]
-        return any(
-            any(keyword.lower() in genre.lower() for keyword in anime_keywords)
-            for genre in genres
-        )
+    def is_anime_by_genre_ids(self, genre_ids: List[int]) -> bool:
+        """
+        通过分类ID判断是否为动漫
+        TMDB分类ID 16 = Animation
+        """
+        return 16 in genre_ids
 
     def get_configuration(self) -> Optional[Dict[str, Any]]:
         """获取配置信息"""
