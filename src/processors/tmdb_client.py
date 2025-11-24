@@ -55,7 +55,7 @@ class TMDBClient:
 
         try:
             search = tmdb.Search()
-            params = {"query": title, "language": self.language}
+            params = {"query": title}
             if year:
                 params["primary_release_year"] = year
 
@@ -80,7 +80,7 @@ class TMDBClient:
 
         try:
             search = tmdb.Search()
-            response = search.tv(query=title, language=self.language)
+            response = search.tv(query=title)
 
             if search.results:
                 return self._process_tv_result(search.results[0], title)

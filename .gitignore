@@ -1,5 +1,6 @@
 config.ini
-__pycache__/
+.devcontainer/devcontainer.json
 logs/
 data/
-.devcontainer/devcontainer.json
+tests/
+__pycache__/
