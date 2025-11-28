@@ -107,7 +107,7 @@ class DatabaseManager:
 
 
 class TMDBCacheDB(DatabaseManager):
-    """TMDB缓存数据库管理"""
+    """TMDB缓存数据库管理 - 修复缓存数据结构"""
 
     def __init__(self, db_path: str, expire_days: int = 30):
         super().__init__(db_path)
@@ -115,7 +115,7 @@ class TMDBCacheDB(DatabaseManager):
         self.create_tables()
 
     def create_tables(self) -> None:
-        """创建TMDB缓存表"""
+        """创建TMDB缓存表 - 添加 genre_ids 字段"""
         queries = [
             """
             CREATE TABLE IF NOT EXISTS tmdb_cache (
@@ -128,6 +128,7 @@ class TMDBCacheDB(DatabaseManager):
                 title TEXT NOT NULL,
                 release_year INTEGER,
                 genres TEXT,
+                genre_ids TEXT,  -- 新增字段：存储分类ID列表
                 data_json TEXT NOT NULL,
                 created_time INTEGER NOT NULL,
                 last_accessed_time INTEGER NOT NULL,
@@ -145,22 +146,23 @@ class TMDBCacheDB(DatabaseManager):
             except Exception as e:
                 self.logger.error(f"创建表失败: {e}")
 
+        self._migrate_table_structure()
         self.logger.info("TMDB缓存表创建完成")
 
     def get_cache(
         self, query_type: str, query_text: str, year: Optional[int] = None
     ) -> Optional[Dict[str, Any]]:
-        """获取缓存"""
+        """获取缓存 - 修复返回数据结构"""
         if year is not None:
             query = """
-            SELECT data_json, tmdb_id, media_type, title, release_year, genres 
+            SELECT data_json, tmdb_id, media_type, title, release_year, genres, genre_ids 
             FROM tmdb_cache 
             WHERE query_type = ? AND query_text = ? AND query_year = ?
             """
             params = (query_type, query_text, year)
         else:
             query = """
-            SELECT data_json, tmdb_id, media_type, title, release_year, genres 
+            SELECT data_json, tmdb_id, media_type, title, release_year, genres, genre_ids 
             FROM tmdb_cache 
             WHERE query_type = ? AND query_text = ?
             """
@@ -180,6 +182,16 @@ class TMDBCacheDB(DatabaseManager):
                 )
 
                 result_dict = dict(result)
+
+                # 解析 genre_ids
+                genre_ids = []
+                if result_dict["genre_ids"]:
+                    try:
+                        genre_ids = json.loads(result_dict["genre_ids"])
+                    except (json.JSONDecodeError, TypeError):
+                        genre_ids = []
+
+                # 构建完整的返回数据
                 return {
                     "data": json.loads(result_dict["data_json"]),
                     "tmdb_id": result_dict["tmdb_id"],
@@ -191,6 +203,8 @@ class TMDBCacheDB(DatabaseManager):
                         if result_dict["genres"]
                         else []
                     ),
+                    "genre_ids": genre_ids,
+                    "is_anime": 16 in genre_ids,  # 在缓存中直接判断是否为动漫
                 }
             return None
         except Exception as e:
@@ -209,12 +223,20 @@ class TMDBCacheDB(DatabaseManager):
         genres: List[str],
         data: Dict[str, Any],
     ) -> None:
-        """设置缓存"""
+        """设置缓存 - 保存 genre_ids"""
         current_time = int(time.time())
+
+        # 从原始数据中提取 genre_ids
+        genre_ids = []
+        if data and "genres" in data:
+            genre_ids = [
+                genre.get("id") for genre in data.get("genres", []) if genre.get("id")
+            ]
+
         query = """
         INSERT OR REPLACE INTO tmdb_cache 
-        (query_type, query_text, query_year, tmdb_id, media_type, title, release_year, genres, data_json, created_time, last_accessed_time)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (query_type, query_text, query_year, tmdb_id, media_type, title, release_year, genres, genre_ids, data_json, created_time, last_accessed_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         try:
@@ -229,12 +251,15 @@ class TMDBCacheDB(DatabaseManager):
                     title,
                     release_year,
                     json.dumps(genres),
+                    json.dumps(genre_ids),  # 保存 genre_ids
                     json.dumps(data),
                     current_time,
                     current_time,
                 ),
             )
-            self.logger.debug(f"缓存设置成功: {query_type}/{query_text}/{year}")
+            self.logger.debug(
+                f"缓存设置成功: {query_type}/{query_text}/{year}, 动漫: {16 in genre_ids}"
+            )
         except Exception as e:
             self.logger.error(f"设置缓存失败: {e}")
             raise
