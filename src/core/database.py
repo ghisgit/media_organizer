@@ -146,7 +146,6 @@ class TMDBCacheDB(DatabaseManager):
             except Exception as e:
                 self.logger.error(f"创建表失败: {e}")
 
-        self._migrate_table_structure()
         self.logger.info("TMDB缓存表创建完成")
 
     def get_cache(
